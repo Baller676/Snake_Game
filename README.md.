@@ -1,0 +1,20 @@
+# Retro Snake Game 🐍✨
+
+A retro neon-themed Snake game built with HTML, CSS, and JavaScript.
+
+## 🎮 Play Online
+[▶️ **Play Snake Game**](https://baller676.github.io/Snake_Game/)
+
+## 📝 How to Play
+- Use the arrow keys to move the snake.
+- Eat the glowing red apples (1 point).
+- After reaching 100 points, glowing blue orbs appear:
+  - Worth 2 points.
+  - Spawn chance increases as your score grows.
+    - 100–200 → 20% blue, 80% red  
+    - 201–300 → 30% blue, 70% red  
+    - 301–400 → 40% blue, 60% red  
+    - 401+ → 50% blue, 50% red  
+
+## 👀 Preview
+*(screenshot coming soon!)*
