@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Retro Neon Snake</title>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#08101a;
+    --panel:#07121a;
+    --neon-green: #21ff7a;
+    --neon-green-dim: #0fa258;
+    --neon-red: #ff3b3b;
+    --neon-blue: #3bb7ff;
+    --glass: rgba(255,255,255,0.03);
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial;background:linear-gradient(180deg,#06101a,#03111a);color:#e6eef8}
+  .wrap{max-width:980px;margin:28px auto;padding:22px;background:rgba(255,255,255,0.02);border-radius:12px;display:grid;grid-template-columns:1fr 320px;gap:20px}
+  header{grid-column:1/-1;display:flex;align-items:center;gap:12px}
+  h1{font-family:'Press Start 2P', monospace;color:var(--neon-green);margin:0}
+  .muted{color:rgba(255,255,255,0.6);font-size:13px}
+  .game-area{display:flex;flex-direction:column;gap:12px;align-items:center}
+  canvas{background:linear-gradient(180deg,#071826,#04121a);border-radius:8px;border:4px solid rgba(255,255,255,0.03);box-shadow:0 8px 40px rgba(0,0,0,0.6)}
+  .controls{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;align-items:center}
+  button{background:var(--panel);border:1px solid rgba(255,255,255,0.03);color:var(--muted);padding:10px 14px;border-radius:8px;cursor:pointer;font-weight:700}
+  button.primary{background:linear-gradient(90deg,#23d7a6,#0fb86a);color:#042b1a;border:none;box-shadow:0 6px 18px rgba(35,215,166,0.08)}
+  .side{padding:14px;border-radius:10px;background:linear-gradient(180deg, rgba(255,255,255,0.02), transparent)}
+  .stat{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px dashed rgba(255,255,255,0.02)}
+  .hud{font-family:'Press Start 2P',monospace;color:var(--neon-green);text-align:center;font-size:12px;text-shadow:0 0 8px rgba(33,255,122,0.12),0 0 18px rgba(33,255,122,0.06)}
+  #instructions{font-family:'Press Start 2P',monospace;color:var(--neon-green);text-align:center;font-size:11px;text-shadow:0 0 6px rgba(33,255,122,0.12);margin-bottom:6px}
+  footer{grid-column:1/-1;text-align:center;color:var(--muted);font-size:12px;margin-top:6px}
+  .small{font-size:12px;color:var(--muted)}
+  @media (max-width:920px){.wrap{grid-template-columns:1fr;padding:14px}.side{order:2}}
+</style>
+</head>
+<body>
+  <div class="wrap" role="application" aria-label="Retro Snake game">
+    <header>
+      <div>
+        <h1>Simple Snake</h1>
+        <div class="muted">Arrow keys or WASD — eat apples to grow. Don't hit the walls or yourself!</div>
+      </div>
+    </header>
+
+    <div class="game-area">
+      <div id="instructions" class="hud">Use Arrow keys or WASD to move — Space to start/resume • P to pause • R to restart</div>
+      <canvas id="game" width="420" height="420" role="img" aria-label="Snake playfield"></canvas>
+
+      <div class="controls" aria-hidden="false">
+        <button id="startBtn" class="primary">Start</button>
+        <button id="pauseBtn">Pause</button>
+        <button id="resetBtn">Restart</button>
+        <div class="small">Speed:
+          <input id="speed" type="range" min="4" max="14" value="8" style="vertical-align:middle;margin-left:8px"/>
+        </div>
+      </div>
+    </div>
+
+    <aside class="side" aria-label="Game stats and help">
+      <div class="stat"><div class="small">Score</div><div id="score" class="hud">0</div></div>
+      <div class="stat"><div class="small">High score</div><div id="high" class="hud">0</div></div>
+      <div class="stat"><div class="small">Length</div><div id="length" class="hud">3</div></div>
+      <div style="padding-top:12px" class="small">
+        Controls:<br/>
+        • Arrow keys or WASD to move<br/>
+        • Space to start/resume, P to pause, R to restart<br/>
+        • Blue orbs spawn once score ≥ 100 and follow probability tiers
+      </div>
+    </aside>
+
+    <footer>Made for you — tweak the code however you like.</footer>
+  </div>
+
+<script>
+(function(){
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const cell = 20;
+  const cols = Math.floor(W / cell);
+  const rows = Math.floor(H / cell);
+
+  // UI
+  const scoreEl = document.getElementById('score');
+  const highEl = document.getElementById('high');
+  const lenEl = document.getElementById('length');
+  const startBtn = document.getElementById('startBtn');
+  const pauseBtn = document.getElementById('pauseBtn');
+  const resetBtn = document.getElementById('resetBtn');
+  const speedRange = document.getElementById('speed');
+
+  // game state
+  let snake, dir, nextDir, food, score, highScore, running, timer, speed;
+  let hasUnlockedBlue = false;
+
+  function init(fullReset=false){
+    snake = [
+      {x: Math.floor(cols/2), y: Math.floor(rows/2)},
+      {x: Math.floor(cols/2)-1, y: Math.floor(rows/2)},
+      {x: Math.floor(cols/2)-2, y: Math.floor(rows/2)}
+    ];
+    dir = {x:1,y:0}; nextDir = {x:1,y:0};
+    score = 0;
+    speed = Number(speedRange.value);
+    hasUnlockedBlue = false;
+    food = spawnFood();
+    running = false;
+    scoreEl.textContent = score;
+    lenEl.textContent = snake.length;
+    if(fullReset){
+      highScore = Number(localStorage.getItem('retro_snake_high') || 0);
+      highEl.textContent = highScore;
+    }
+    draw();
+  }
+
+  // determine blue probability based on score
+  function blueProbForScore(s){
+    if(s < 100) return 0;
+    if(s <= 200) return 0.20;
+    if(s <= 300) return 0.30;
+    if(s <= 400) return 0.40;
+    return 0.50;
+  }
+
+  // spawn red or blue food according to rules
+  function spawnFood(){
+    const blocked = new Set(snake.map(p=>p.x+','+p.y));
+    // find free coords
+    let tries = 0;
+    while(tries++ < 2000){
+      const x = Math.floor(Math.random()*cols);
+      const y = Math.floor(Math.random()*rows);
+      const key = x+','+y;
+      if(blocked.has(key)) continue;
+      // determine color
+      let type = 'red';
+      const bp = blueProbForScore(score);
+      if(bp > 0 && Math.random() < bp) type = 'blue';
+      return {x,y,type,spawnTime:Date.now()};
+    }
+    // fallback
+    return {x:0,y:0,type:'red',spawnTime:Date.now()};
+  }
+
+  function step(){
+    // apply queued direction
+    if(!(nextDir.x === -dir.x && nextDir.y === -dir.y)) dir = nextDir;
+    const head = {x: snake[0].x + dir.x, y: snake[0].y + dir.y};
+
+    // walls
+    if(head.x < 0 || head.x >= cols || head.y < 0 || head.y >= rows) return gameOver();
+
+    // self collision
+    for(let i=0;i<snake.length;i++){
+      if(snake[i].x === head.x && snake[i].y === head.y) return gameOver();
+    }
+
+    snake.unshift(head);
+
+    // eat?
+    if(head.x === food.x && head.y === food.y){
+      // points
+      if(food.type === 'blue'){
+        score += 2;
+      } else {
+        score += 1;
+      }
+      // unlocking logic: once score >=100, blue is allowed (blueProbForScore handles it)
+      if(score >= 100) hasUnlockedBlue = true;
+
+      // update UI
+      scoreEl.textContent = score;
+      lenEl.textContent = snake.length;
+
+      if(score > highScore){ highScore = score; highEl.textContent = highScore; localStorage.setItem('retro_snake_high', highScore); }
+
+      // generate next food immediately per your rule
+      food = spawnFood();
+
+    } else {
+      snake.pop();
+      lenEl.textContent = snake.length;
+    }
+
+    draw();
+  }
+
+  function gameOver(){
+    running = false;
+    clearInterval(timer);
+    // overlay message
+    ctx.save();
+    ctx.globalAlpha = 0.95;
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.fillRect(0, H/2 - 44, W, 88);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#fff';
+    ctx.font = '14px "Press Start 2P", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#fff';
+    // neon red for game over
+    ctx.fillStyle = '#ff6b6b';
+    ctx.shadowColor = 'rgba(255,107,107,0.9)';
+    ctx.shadowBlur = 18;
+    ctx.fillText('Game Over — Press Start or R to restart', W/2, H/2 + 6);
+    ctx.restore();
+  }
+
+  // drawing helpers
+  function draw(){
+    // background
+    ctx.clearRect(0,0,W,H);
+    // subtle grid/backplate
+    ctx.fillStyle = '#08161b';
+    ctx.fillRect(0,0,W,H);
+
+    // inner playfield slight border
+    ctx.save();
+    ctx.globalAlpha = 0.06;
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(6,6,W-12,H-12);
+    ctx.restore();
+
+    // center area (the grid area)
+    // draw apple/food (with glow)
+    if(food){
+      const fx = food.x * cell + 2;
+      const fy = food.y * cell + 2;
+      const s = cell - 4;
+      if(food.type === 'red'){
+        // red glowing square
+        ctx.save();
+        ctx.shadowBlur = 18;
+        ctx.shadowColor = 'rgba(255,59,59,0.9)';
+        ctx.fillStyle = '#ff3b3b';
+        ctx.fillRect(fx, fy, s, s);
+        ctx.restore();
+      } else {
+        // blue pulsing orb (draw circle with glow)
+        const t = (Date.now() - food.spawnTime) / 300;
+        const pulse = 1 + 0.08 * Math.sin(t*6);
+        ctx.save();
+        ctx.beginPath();
+        ctx.shadowBlur = 26 * pulse;
+        ctx.shadowColor = 'rgba(59,183,255,0.95)';
+        ctx.fillStyle = '#3bb7ff';
+        ctx.arc(fx + s/2, fy + s/2, (s/2)*pulse, 0, Math.PI*2);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    // draw snake with gradient glow
+    for(let i = snake.length - 1; i >= 0; i--){
+      const p = snake[i];
+      const x = p.x * cell + 2;
+      const y = p.y * cell + 2;
+      const size = cell - 4;
+      const intensity = 1 - i / Math.max(8, snake.length);
+      ctx.save();
+      ctx.shadowBlur = 8 + 18*intensity;
+      ctx.shadowColor = `rgba(33,255,122,${0.35 + intensity*0.45})`;
+      ctx.fillStyle = i === 0 ? '#00ff6a' : `rgba(10,180,90,${0.6})`;
+      ctx.fillRect(x, y, size, size);
+      ctx.restore();
+    }
+
+    // small HUD overlay
+    ctx.save();
+    ctx.font = '10px "Press Start 2P", monospace';
+    ctx.fillStyle = '#bfeadf';
+    ctx.textAlign = 'left';
+    ctx.fillText('Score: ' + score, 10, 14);
+    ctx.restore();
+  }
+
+  // input
+  window.addEventListener('keydown', e=>{
+    const k = e.key;
+    if(k === 'ArrowUp' || k === 'w' || k === 'W') setDir(0,-1);
+    if(k === 'ArrowDown' || k === 's' || k === 'S') setDir(0,1);
+    if(k === 'ArrowLeft' || k === 'a' || k === 'A') setDir(-1,0);
+    if(k === 'ArrowRight' || k === 'd' || k === 'D') setDir(1,0);
+    if(e.code === 'Space'){ start(); e.preventDefault(); }
+    if(k === 'p' || k === 'P'){ togglePause(); }
+    if(k === 'r' || k === 'R'){ init(true); start(); }
+  });
+
+  function setDir(x,y){
+    if(x === -dir.x && y === -dir.y) return;
+    nextDir = {x,y};
+  }
+
+  // controls binding
+  startBtn.addEventListener('click', ()=>start());
+  pauseBtn.addEventListener('click', ()=>togglePause());
+  resetBtn.addEventListener('click', ()=>{ init(true); start(); });
+  speedRange.addEventListener('input', ()=>{ speed = Number(speedRange.value); if(running) restartTimer(); });
+
+  function start(){
+    if(running) return;
+    running = true;
+    restartTimer();
+  }
+  function togglePause(){
+    if(!running){ start(); return; }
+    running = !running;
+    if(!running) clearInterval(timer);
+    else restartTimer();
+  }
+  function restartTimer(){
+    clearInterval(timer);
+    const ms = Math.max(35, 320 - (speed-4)*30); // speed -> interval
+    timer = setInterval(step, ms);
+  }
+
+  // expose for debugging
+  window.__retroSnake = {init, start, step, spawnFood};
+
+  // initialize
+  init(true);
+
+})();
+</script>
+</body>
+</html>
