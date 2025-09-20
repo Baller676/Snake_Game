@@ -74,256 +74,129 @@
   </div>
 
 <script>
-(function(){
-  const canvas = document.getElementById('game');
-  const ctx = canvas.getContext('2d');
-  const W = canvas.width, H = canvas.height;
-  const cell = 20;
-  const cols = Math.floor(W / cell);
-  const rows = Math.floor(H / cell);
+let snake, dx, dy, food, score, level, timer, speed;
+const boxSize = 20;
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+const rows = canvas.height / boxSize;
+const cols = canvas.width / boxSize;
 
-  // UI
-  const scoreEl = document.getElementById('score');
-  const highEl = document.getElementById('high');
-  const lenEl = document.getElementById('length');
-  const startBtn = document.getElementById('startBtn');
-  const pauseBtn = document.getElementById('pauseBtn');
-  const resetBtn = document.getElementById('resetBtn');
-  const speedRange = document.getElementById('speed');
+function init() {
+  snake = [{ x: 10, y: 10 }];
+  dx = 1; dy = 0;
+  score = 0;
+  level = 1;
+  speed = 200; // ms per step
+  spawnFood();
+  startGame();
+}
 
-  // game state
-  let snake, dir, nextDir, food, score, highScore, running, timer, speed;
-  let hasUnlockedBlue = false;
+function startGame() {
+  clearInterval(timer);
+  timer = setInterval(update, speed);
+}
 
-  function init(fullReset=false){
-    snake = [
-      {x: Math.floor(cols/2), y: Math.floor(rows/2)},
-      {x: Math.floor(cols/2)-1, y: Math.floor(rows/2)},
-      {x: Math.floor(cols/2)-2, y: Math.floor(rows/2)}
-    ];
-    dir = {x:1,y:0}; nextDir = {x:1,y:0};
-    score = 0;
-    speed = Number(speedRange.value);
-    hasUnlockedBlue = false;
-    food = spawnFood();
-    running = false;
-    scoreEl.textContent = score;
-    lenEl.textContent = snake.length;
-    if(fullReset){
-      highScore = Number(localStorage.getItem('retro_snake_high') || 0);
-      highEl.textContent = highScore;
+function spawnFood() {
+  const types = [
+    { color: "red", value: 1, growth: 1 },
+    { color: "blue", value: 5, growth: 2 },
+    { color: "yellow", value: 10, growth: 3 }
+  ];
+
+  // Probabilities change by score
+  let probs;
+  if (score < 50) probs = [1, 0, 0];             // only red
+  else if (score < 100) probs = [0.75, 0.25, 0]; // red/blue
+  else if (score < 150) probs = [0.5, 0.5, 0];   // equal red/blue
+  else if (score < 200) probs = [0.4, 0.4, 0.2]; // red/blue/yellow
+  else probs = [0.33, 0.33, 0.34];               // all equal
+
+  let r = Math.random();
+  let choice;
+  if (r < probs[0]) choice = types[0];
+  else if (r < probs[0] + probs[1]) choice = types[1];
+  else choice = types[2];
+
+  food = {
+    x: Math.floor(Math.random() * cols),
+    y: Math.floor(Math.random() * rows),
+    ...choice
+  };
+}
+
+function update() {
+  const head = { x: snake[0].x + dx, y: snake[0].y + dy };
+
+  // Collisions
+  if (head.x < 0 || head.y < 0 || head.x >= cols || head.y >= rows) return gameOver();
+  if (snake.some(seg => seg.x === head.x && seg.y === head.y)) {
+    if (snake.length >= rows * cols) return levelUp();
+    else return gameOver();
+  }
+
+  snake.unshift(head);
+
+  if (head.x === food.x && head.y === food.y) {
+    score += food.value;
+    for (let i = 0; i < food.growth; i++) {
+      snake.push({ ...snake[snake.length - 1] });
     }
-    draw();
+    spawnFood();
+  } else {
+    snake.pop();
   }
 
-  // determine blue probability based on score
-  function blueProbForScore(s){
-    if(s < 100) return 0;
-    if(s <= 200) return 0.20;
-    if(s <= 300) return 0.30;
-    if(s <= 400) return 0.40;
-    return 0.50;
-  }
+  draw();
+}
 
-  // spawn red or blue food according to rules
-  function spawnFood(){
-    const blocked = new Set(snake.map(p=>p.x+','+p.y));
-    // find free coords
-    let tries = 0;
-    while(tries++ < 2000){
-      const x = Math.floor(Math.random()*cols);
-      const y = Math.floor(Math.random()*rows);
-      const key = x+','+y;
-      if(blocked.has(key)) continue;
-      // determine color
-      let type = 'red';
-      const bp = blueProbForScore(score);
-      if(bp > 0 && Math.random() < bp) type = 'blue';
-      return {x,y,type,spawnTime:Date.now()};
-    }
-    // fallback
-    return {x:0,y:0,type:'red',spawnTime:Date.now()};
-  }
+function draw() {
+  ctx.fillStyle = "#111";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  function step(){
-    // apply queued direction
-    if(!(nextDir.x === -dir.x && nextDir.y === -dir.y)) dir = nextDir;
-    const head = {x: snake[0].x + dir.x, y: snake[0].y + dir.y};
+  // Snake
+  ctx.fillStyle = "lime";
+  snake.forEach(s => ctx.fillRect(s.x * boxSize, s.y * boxSize, boxSize, boxSize));
 
-    // walls
-    if(head.x < 0 || head.x >= cols || head.y < 0 || head.y >= rows) return gameOver();
+  // Food
+  ctx.fillStyle = food.color;
+  ctx.fillRect(food.x * boxSize, food.y * boxSize, boxSize, boxSize);
 
-    // self collision
-    for(let i=0;i<snake.length;i++){
-      if(snake[i].x === head.x && snake[i].y === head.y) return gameOver();
-    }
+  // HUD
+  ctx.fillStyle = "#0f0";
+  ctx.font = "16px 'Press Start 2P', monospace";
+  ctx.fillText("Score: " + score, 10, 20);
+  ctx.fillText("Level: " + level, 10, 40);
+}
 
-    snake.unshift(head);
+function gameOver() {
+  clearInterval(timer);
+  alert("Game Over! Final Score: " + score + " at Level " + level);
+  init();
+}
 
-    // eat?
-    if(head.x === food.x && head.y === food.y){
-      // points
-      if(food.type === 'blue'){
-        score += 2;
-      } else {
-        score += 1;
-      }
-      // unlocking logic: once score >=100, blue is allowed (blueProbForScore handles it)
-      if(score >= 100) hasUnlockedBlue = true;
+function levelUp() {
+  clearInterval(timer);
+  level++;
+  alert("LEVEL UP! Now Level " + level);
 
-      // update UI
-      scoreEl.textContent = score;
-      lenEl.textContent = snake.length;
+  // reset snake
+  snake = [{ x: 10, y: 10 }];
+  dx = 1; dy = 0;
 
-      if(score > highScore){ highScore = score; highEl.textContent = highScore; localStorage.setItem('retro_snake_high', highScore); }
+  // increase speed (faster each level)
+  speed = Math.max(60, speed - 20);
+  startGame();
+}
 
-      // generate next food immediately per your rule
-      food = spawnFood();
+window.addEventListener("keydown", e => {
+  if (e.key === "ArrowUp" && dy === 0) { dx = 0; dy = -1; }
+  if (e.key === "ArrowDown" && dy === 0) { dx = 0; dy = 1; }
+  if (e.key === "ArrowLeft" && dx === 0) { dx = -1; dy = 0; }
+  if (e.key === "ArrowRight" && dx === 0) { dx = 1; dy = 0; }
+});
 
-    } else {
-      snake.pop();
-      lenEl.textContent = snake.length;
-    }
+init();
 
-    draw();
-  }
-
-  function gameOver(){
-    running = false;
-    clearInterval(timer);
-    // overlay message
-    ctx.save();
-    ctx.globalAlpha = 0.95;
-    ctx.fillStyle = 'rgba(0,0,0,0.7)';
-    ctx.fillRect(0, H/2 - 44, W, 88);
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = '#fff';
-    ctx.font = '14px "Press Start 2P", monospace';
-    ctx.textAlign = 'center';
-    ctx.fillStyle = '#fff';
-    // neon red for game over
-    ctx.fillStyle = '#ff6b6b';
-    ctx.shadowColor = 'rgba(255,107,107,0.9)';
-    ctx.shadowBlur = 18;
-    ctx.fillText('Game Over — Press Start or R to restart', W/2, H/2 + 6);
-    ctx.restore();
-  }
-
-  // drawing helpers
-  function draw(){
-    // background
-    ctx.clearRect(0,0,W,H);
-    // subtle grid/backplate
-    ctx.fillStyle = '#08161b';
-    ctx.fillRect(0,0,W,H);
-
-    // inner playfield slight border
-    ctx.save();
-    ctx.globalAlpha = 0.06;
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(6,6,W-12,H-12);
-    ctx.restore();
-
-    // center area (the grid area)
-    // draw apple/food (with glow)
-    if(food){
-      const fx = food.x * cell + 2;
-      const fy = food.y * cell + 2;
-      const s = cell - 4;
-      if(food.type === 'red'){
-        // red glowing square
-        ctx.save();
-        ctx.shadowBlur = 18;
-        ctx.shadowColor = 'rgba(255,59,59,0.9)';
-        ctx.fillStyle = '#ff3b3b';
-        ctx.fillRect(fx, fy, s, s);
-        ctx.restore();
-      } else {
-        // blue pulsing orb (draw circle with glow)
-        const t = (Date.now() - food.spawnTime) / 300;
-        const pulse = 1 + 0.08 * Math.sin(t*6);
-        ctx.save();
-        ctx.beginPath();
-        ctx.shadowBlur = 26 * pulse;
-        ctx.shadowColor = 'rgba(59,183,255,0.95)';
-        ctx.fillStyle = '#3bb7ff';
-        ctx.arc(fx + s/2, fy + s/2, (s/2)*pulse, 0, Math.PI*2);
-        ctx.fill();
-        ctx.restore();
-      }
-    }
-
-    // draw snake with gradient glow
-    for(let i = snake.length - 1; i >= 0; i--){
-      const p = snake[i];
-      const x = p.x * cell + 2;
-      const y = p.y * cell + 2;
-      const size = cell - 4;
-      const intensity = 1 - i / Math.max(8, snake.length);
-      ctx.save();
-      ctx.shadowBlur = 8 + 18*intensity;
-      ctx.shadowColor = `rgba(33,255,122,${0.35 + intensity*0.45})`;
-      ctx.fillStyle = i === 0 ? '#00ff6a' : `rgba(10,180,90,${0.6})`;
-      ctx.fillRect(x, y, size, size);
-      ctx.restore();
-    }
-
-    // small HUD overlay
-    ctx.save();
-    ctx.font = '10px "Press Start 2P", monospace';
-    ctx.fillStyle = '#bfeadf';
-    ctx.textAlign = 'left';
-    ctx.fillText('Score: ' + score, 10, 14);
-    ctx.restore();
-  }
-
-  // input
-  window.addEventListener('keydown', e=>{
-    const k = e.key;
-    if(k === 'ArrowUp' || k === 'w' || k === 'W') setDir(0,-1);
-    if(k === 'ArrowDown' || k === 's' || k === 'S') setDir(0,1);
-    if(k === 'ArrowLeft' || k === 'a' || k === 'A') setDir(-1,0);
-    if(k === 'ArrowRight' || k === 'd' || k === 'D') setDir(1,0);
-    if(e.code === 'Space'){ start(); e.preventDefault(); }
-    if(k === 'p' || k === 'P'){ togglePause(); }
-    if(k === 'r' || k === 'R'){ init(true); start(); }
-  });
-
-  function setDir(x,y){
-    if(x === -dir.x && y === -dir.y) return;
-    nextDir = {x,y};
-  }
-
-  // controls binding
-  startBtn.addEventListener('click', ()=>start());
-  pauseBtn.addEventListener('click', ()=>togglePause());
-  resetBtn.addEventListener('click', ()=>{ init(true); start(); });
-  speedRange.addEventListener('input', ()=>{ speed = Number(speedRange.value); if(running) restartTimer(); });
-
-  function start(){
-    if(running) return;
-    running = true;
-    restartTimer();
-  }
-  function togglePause(){
-    if(!running){ start(); return; }
-    running = !running;
-    if(!running) clearInterval(timer);
-    else restartTimer();
-  }
-  function restartTimer(){
-    clearInterval(timer);
-    const ms = Math.max(35, 320 - (speed-4)*30); // speed -> interval
-    timer = setInterval(step, ms);
-  }
-
-  // expose for debugging
-  window.__retroSnake = {init, start, step, spawnFood};
-
-  // initialize
-  init(true);
-
-})();
 </script>
 </body>
 </html>
